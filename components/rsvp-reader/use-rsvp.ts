@@ -118,11 +118,17 @@ export function useRsvp(text: string) {
   const advance = useCallback(() => {
     setCurrentWordIndex((prev) => {
       let next: number;
+      let pauseFactor = 1.0;
+
       if (mode === "words") {
         next = prev + chunkSize;
         if (next >= words.length) {
           setIsPlaying(false);
           return words.length - 1;
+        }
+        // In word mode, check if current word ends a sentence
+        if (prev < words.length) {
+          pauseFactor = getWordPauseFactor(words[prev]);
         }
       } else {
         // sentence mode: advance by chunkSize sentences
@@ -133,14 +139,16 @@ export function useRsvp(text: string) {
           return words.length - 1;
         }
         next = sentenceIndexToWordIndex(nextSentence, sentences);
+
+        // In sentence mode, check the last word of the current sentence for pause
+        const currentSentenceText = sentences[currentSentence];
+        const sentenceWords = currentSentenceText.trim().split(/\s+/).filter(Boolean);
+        if (sentenceWords.length > 0) {
+          pauseFactor = getWordPauseFactor(sentenceWords[sentenceWords.length - 1]);
+        }
       }
 
-      // Check if current (or last) word ends a sentence
-      if (mode === "words" && prev < words.length) {
-        const pauseFactor = getWordPauseFactor(words[prev]);
-        setLastWordPauseFactor(pauseFactor);
-      }
-
+      setLastWordPauseFactor(pauseFactor);
       return next;
     });
   }, [mode, chunkSize, words, sentences]);
