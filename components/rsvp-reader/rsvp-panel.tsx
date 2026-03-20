@@ -168,9 +168,14 @@ export function RsvpPanel({
             aria-label="Speed"
           />
           <span className="text-xs text-muted-foreground w-8 text-right shrink-0 font-mono">10×</span>
-          <span className="text-xs font-mono text-primary w-10 text-right shrink-0">
-            {speed}×/s
-          </span>
+          <div className="flex flex-col gap-0.5 text-right shrink-0">
+            <span className="text-xs font-mono text-primary">
+              {speed}×/s
+            </span>
+            <span className="text-xs font-mono text-primary">
+              {Math.round(speed * 60)} wpm
+            </span>
+          </div>
         </div>
       </div>
     </div>
