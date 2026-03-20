@@ -82,7 +82,16 @@ export function useRsvp(text: string) {
 
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(3); // advances per second
+  const [speed, setSpeedRaw] = useState(3); // advances per second
+  const setSpeed = useCallback(
+    (value: number | ((prev: number) => number)) => {
+      setSpeedRaw((prev) => {
+        const next = typeof value === "function" ? value(prev) : value;
+        return Math.max(0.5, Math.min(10, parseFloat(next.toFixed(1))));
+      });
+    },
+    []
+  );
   const [mode, setMode] = useState<RsvpMode>("words");
   const [chunkSize, setChunkSize] = useState(1);
 

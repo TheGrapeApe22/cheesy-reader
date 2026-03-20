@@ -47,6 +47,10 @@ export function RsvpReader() {
         rsvp.goTo(Math.max(rsvp.currentWordIndex - rsvp.chunkSize, 0));
       } else if (e.key === "r" || e.key === "R") {
         rsvp.restart();
+      } else if (e.key === "a" || e.key === "A") {
+        rsvp.setSpeed((s) => Math.max(0.5, parseFloat((s - 0.5).toFixed(1))));
+      } else if (e.key === "d" || e.key === "D") {
+        rsvp.setSpeed((s) => Math.min(10, parseFloat((s + 0.5).toFixed(1))));
       }
     };
     window.addEventListener("keydown", handler);
@@ -121,7 +125,7 @@ export function RsvpReader() {
             onChange={setRightFontSize}
           />
           <span className="text-xs text-muted-foreground font-mono hidden sm:block">
-            Space=play · ←→=step · R=restart
+            Space=play · ←→=step · A/D=speed · R=restart
           </span>
         </div>
       </header>
@@ -161,7 +165,15 @@ export function RsvpReader() {
         </div>
 
         {/* Right panel */}
-        <div className="flex-1 min-w-0 overflow-hidden">
+        <div
+          className="flex-1 min-w-0 overflow-hidden"
+          onWheel={(e) => {
+            e.preventDefault();
+            setRightFontSize((prev) =>
+              Math.max(10, Math.min(96, prev + (e.deltaY < 0 ? 2 : -2)))
+            );
+          }}
+        >
           <RsvpPanel
             currentChunk={rsvp.currentChunk}
             mode={rsvp.mode}
