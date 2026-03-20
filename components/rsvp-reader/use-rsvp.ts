@@ -104,10 +104,22 @@ export function useRsvp(text: string) {
   );
   const [mode, setMode] = useState<RsvpMode>("words");
   const [chunkSize, setChunkSize] = useState(1);
-  const [lastWordPauseFactor, setLastWordPauseFactor] = useState(1.0);
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep refs so the scheduler closure always reads fresh values without
+  // needing them in the dependency array (which would restart the loop).
+  const isPlayingRef = useRef(false);
+  const speedRef = useRef(3);
+  const modeRef = useRef<RsvpMode>("words");
+  const chunkSizeRef = useRef(1);
+  const currentWordIndexRef = useRef(0);
+
+  // Sync refs whenever state changes
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { chunkSizeRef.current = chunkSize; }, [chunkSize]);
+  useEffect(() => { currentWordIndexRef.current = currentWordIndex; }, [currentWordIndex]);
 
   // reset position when text changes
   useEffect(() => {
@@ -115,76 +127,105 @@ export function useRsvp(text: string) {
     setIsPlaying(false);
   }, [text]);
 
-  const advance = useCallback(() => {
-    setCurrentWordIndex((prev) => {
-      let next: number;
-      let pauseFactor = 1.0;
+  /**
+   * Schedule the next advance using the pause factor of the CURRENT (about-to-leave) word/sentence,
+   * then update the index. This ensures the extra pause is visible on the current item,
+   * not on the next one.
+   */
+  const scheduleNext = useCallback(() => {
+    if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
 
-      if (mode === "words") {
-        next = prev + chunkSize;
-        if (next >= words.length) {
-          setIsPlaying(false);
-          return words.length - 1;
-        }
-        // In word mode, check if current word ends a sentence
-        if (prev < words.length) {
-          pauseFactor = getWordPauseFactor(words[prev]);
-        }
-      } else {
-        // sentence mode: advance by chunkSize sentences
-        const currentSentence = wordIndexToSentenceIndex(prev, words, sentences);
-        const nextSentence = currentSentence + chunkSize;
-        if (nextSentence >= sentences.length) {
-          setIsPlaying(false);
-          return words.length - 1;
-        }
-        next = sentenceIndexToWordIndex(nextSentence, sentences);
+    const currentIdx = currentWordIndexRef.current;
+    const currentWords = parseWords(text);
+    const currentSentences = parseSentences(text);
+    const currentMode = modeRef.current;
+    const currentChunkSize = chunkSizeRef.current;
 
-        // In sentence mode, check the last word of the current sentence for pause
-        const currentSentenceText = sentences[currentSentence];
-        const sentenceWords = currentSentenceText.trim().split(/\s+/).filter(Boolean);
-        if (sentenceWords.length > 0) {
-          pauseFactor = getWordPauseFactor(sentenceWords[sentenceWords.length - 1]);
-        }
+    // Compute the pause factor for the item currently being displayed
+    let pauseFactor = 1.0;
+    if (currentMode === "words") {
+      if (currentIdx < currentWords.length) {
+        pauseFactor = getWordPauseFactor(currentWords[currentIdx]);
       }
+    } else {
+      const si = wordIndexToSentenceIndex(currentIdx, currentWords, currentSentences);
+      const sentWords = currentSentences[si]?.trim().split(/\s+/).filter(Boolean) ?? [];
+      if (sentWords.length > 0) {
+        pauseFactor = getWordPauseFactor(sentWords[sentWords.length - 1]);
+      }
+    }
 
-      setLastWordPauseFactor(pauseFactor);
-      return next;
-    });
-  }, [mode, chunkSize, words, sentences]);
+    const delay = (1000 / speedRef.current) * pauseFactor;
 
-  // manage interval with pause factor applied to current word
+    pauseTimeoutRef.current = setTimeout(() => {
+      if (!isPlayingRef.current) return;
+
+      setCurrentWordIndex((prev) => {
+        let next: number;
+        if (currentMode === "words") {
+          next = prev + currentChunkSize;
+          if (next >= currentWords.length) {
+            isPlayingRef.current = false;
+            setIsPlaying(false);
+            return currentWords.length - 1;
+          }
+        } else {
+          const si = wordIndexToSentenceIndex(prev, currentWords, currentSentences);
+          const nextSi = si + currentChunkSize;
+          if (nextSi >= currentSentences.length) {
+            isPlayingRef.current = false;
+            setIsPlaying(false);
+            return currentWords.length - 1;
+          }
+          next = sentenceIndexToWordIndex(nextSi, currentSentences);
+        }
+        currentWordIndexRef.current = next;
+        return next;
+      });
+
+      // Schedule the next step after state update propagates
+      if (isPlayingRef.current) {
+        scheduleNext();
+      }
+    }, delay);
+  }, [text]);
+
+  // manage playback: start/stop the scheduler
   useEffect(() => {
     if (isPlaying) {
-      const baseMsPerWord = 1000 / speed;
-      const actualMs = baseMsPerWord * lastWordPauseFactor;
-      pauseTimeoutRef.current = setTimeout(() => {
-        advance();
-      }, actualMs);
+      isPlayingRef.current = true;
+      scheduleNext();
     } else {
+      isPlayingRef.current = false;
       if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
     }
     return () => {
       if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
     };
-  }, [isPlaying, speed, advance, lastWordPauseFactor]);
+  }, [isPlaying, scheduleNext]);
 
   const play = () => {
-    if (currentWordIndex >= words.length - 1) setCurrentWordIndex(0);
-    if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
+    if (currentWordIndexRef.current >= words.length - 1) {
+      currentWordIndexRef.current = 0;
+      setCurrentWordIndex(0);
+    }
     setIsPlaying(true);
   };
   const pause = () => {
+    isPlayingRef.current = false;
     if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
     setIsPlaying(false);
   };
   const togglePlay = () => (isPlaying ? pause() : play());
 
   const goTo = (wordIdx: number) => {
-    setCurrentWordIndex(Math.max(0, Math.min(wordIdx, words.length - 1)));
+    const clamped = Math.max(0, Math.min(wordIdx, words.length - 1));
+    currentWordIndexRef.current = clamped;
+    setCurrentWordIndex(clamped);
   };
 
   const restart = () => {
+    currentWordIndexRef.current = 0;
     setCurrentWordIndex(0);
     setIsPlaying(false);
   };
