@@ -23,10 +23,13 @@ export interface RsvpState {
 
 /**
  * Split text into words (punctuation stays attached to adjacent word).
- * Splits on whitespace only.
+ * Splits on whitespace and em-dashes (—) as separate words.
  */
 export function parseWords(text: string): string[] {
-  return text.trim().split(/\s+/).filter(Boolean);
+  return text
+    .trim()
+    .split(/[\s—]+/) // split on whitespace or em-dash
+    .filter(Boolean);
 }
 
 /**
@@ -74,6 +77,13 @@ export function sentenceIndexToWordIndex(
   return idx;
 }
 
+/**
+ * Returns pause multiplier for a word: 2.0 if word ends sentence (ends with . ! ?), else 1.0.
+ */
+export function getWordPauseFactor(word: string): number {
+  return /[.!?]$/.test(word) ? 2.0 : 1.0;
+}
+
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
 export function useRsvp(text: string) {
@@ -94,8 +104,10 @@ export function useRsvp(text: string) {
   );
   const [mode, setMode] = useState<RsvpMode>("words");
   const [chunkSize, setChunkSize] = useState(1);
+  const [lastWordPauseFactor, setLastWordPauseFactor] = useState(1.0);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // reset position when text changes
   useEffect(() => {
@@ -105,13 +117,13 @@ export function useRsvp(text: string) {
 
   const advance = useCallback(() => {
     setCurrentWordIndex((prev) => {
+      let next: number;
       if (mode === "words") {
-        const next = prev + chunkSize;
+        next = prev + chunkSize;
         if (next >= words.length) {
           setIsPlaying(false);
           return words.length - 1;
         }
-        return next;
       } else {
         // sentence mode: advance by chunkSize sentences
         const currentSentence = wordIndexToSentenceIndex(prev, words, sentences);
@@ -120,29 +132,44 @@ export function useRsvp(text: string) {
           setIsPlaying(false);
           return words.length - 1;
         }
-        return sentenceIndexToWordIndex(nextSentence, sentences);
+        next = sentenceIndexToWordIndex(nextSentence, sentences);
       }
+
+      // Check if current (or last) word ends a sentence
+      if (mode === "words" && prev < words.length) {
+        const pauseFactor = getWordPauseFactor(words[prev]);
+        setLastWordPauseFactor(pauseFactor);
+      }
+
+      return next;
     });
   }, [mode, chunkSize, words, sentences]);
 
-  // manage interval
+  // manage interval with pause factor applied to current word
   useEffect(() => {
     if (isPlaying) {
-      const ms = 1000 / speed;
-      intervalRef.current = setInterval(advance, ms);
+      const baseMsPerWord = 1000 / speed;
+      const actualMs = baseMsPerWord * lastWordPauseFactor;
+      pauseTimeoutRef.current = setTimeout(() => {
+        advance();
+      }, actualMs);
     } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
     }
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
     };
-  }, [isPlaying, speed, advance]);
+  }, [isPlaying, speed, advance, lastWordPauseFactor]);
 
   const play = () => {
     if (currentWordIndex >= words.length - 1) setCurrentWordIndex(0);
+    if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
     setIsPlaying(true);
   };
-  const pause = () => setIsPlaying(false);
+  const pause = () => {
+    if (pauseTimeoutRef.current) clearTimeout(pauseTimeoutRef.current);
+    setIsPlaying(false);
+  };
   const togglePlay = () => (isPlaying ? pause() : play());
 
   const goTo = (wordIdx: number) => {
