@@ -141,17 +141,23 @@ export function useRsvp(text: string) {
     const currentMode = modeRef.current;
     const currentChunkSize = chunkSizeRef.current;
 
-    // Compute the pause factor for the item currently being displayed
+    // Compute the pause factor based on the NEXT word/sentence to be shown.
+    // This makes the pause visible on the second-to-last word of a sentence,
+    // i.e. while showing word N, we pause longer if word N+chunkSize ends a sentence.
     let pauseFactor = 1.0;
     if (currentMode === "words") {
-      if (currentIdx < currentWords.length) {
-        pauseFactor = getWordPauseFactor(currentWords[currentIdx]);
+      const nextIdx = currentIdx + currentChunkSize;
+      if (nextIdx < currentWords.length) {
+        pauseFactor = getWordPauseFactor(currentWords[nextIdx]);
       }
     } else {
       const si = wordIndexToSentenceIndex(currentIdx, currentWords, currentSentences);
-      const sentWords = currentSentences[si]?.trim().split(/\s+/).filter(Boolean) ?? [];
-      if (sentWords.length > 0) {
-        pauseFactor = getWordPauseFactor(sentWords[sentWords.length - 1]);
+      const nextSi = si + currentChunkSize;
+      if (nextSi < currentSentences.length) {
+        const nextSentWords = currentSentences[nextSi]?.trim().split(/\s+/).filter(Boolean) ?? [];
+        if (nextSentWords.length > 0) {
+          pauseFactor = getWordPauseFactor(nextSentWords[nextSentWords.length - 1]);
+        }
       }
     }
 
