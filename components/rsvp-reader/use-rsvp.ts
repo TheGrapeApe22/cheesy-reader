@@ -78,10 +78,10 @@ export function sentenceIndexToWordIndex(
 }
 
 /**
- * Returns pause multiplier for a word: 2.0 if word ends sentence (ends with . ! ?), else 1.0.
+ * Returns pause multiplier for a word: 2.0 if word ends sentence (ends with . ! ? or ." !"), else 1.0.
  */
 export function getWordPauseFactor(word: string): number {
-  return /[.!?]$/.test(word) ? 2.0 : 1.0;
+  return /[.!?]["']?$/.test(word) ? 2.0 : 1.0;
 }
 
 // ─── Hook ──────────────────────────────────────────────────────────────────
