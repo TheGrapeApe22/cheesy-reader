@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { TextPanel, DEFAULT_TEXT } from "./text-panel";
 import { RsvpPanel } from "./rsvp-panel";
-import { useRsvp } from "./use-rsvp";
+import { useRsvp, wordIndexToSentenceIndex, sentenceIndexToWordIndex } from "./use-rsvp";
 import { ZoomControls } from "./zoom-controls";
 
 // ─── Keyboard bindings ─────────────────────────────────────────────────────
@@ -36,15 +36,29 @@ export function RsvpReader() {
         rsvp.togglePlay();
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        rsvp.goTo(
-          Math.min(
-            rsvp.currentWordIndex + rsvp.chunkSize,
-            rsvp.words.length - 1
-          )
-        );
+        if (rsvp.mode === "words") {
+          rsvp.goTo(
+            Math.min(
+              rsvp.currentWordIndex + rsvp.chunkSize,
+              rsvp.words.length - 1
+            )
+          );
+        } else {
+          // sentence mode: skip to next sentence
+          const currentSi = wordIndexToSentenceIndex(rsvp.currentWordIndex, rsvp.words, rsvp.sentences);
+          const nextSi = Math.min(currentSi + rsvp.chunkSize, rsvp.sentences.length - 1);
+          rsvp.goTo(sentenceIndexToWordIndex(nextSi, rsvp.sentences));
+        }
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        rsvp.goTo(Math.max(rsvp.currentWordIndex - rsvp.chunkSize, 0));
+        if (rsvp.mode === "words") {
+          rsvp.goTo(Math.max(rsvp.currentWordIndex - rsvp.chunkSize, 0));
+        } else {
+          // sentence mode: skip to previous sentence
+          const currentSi = wordIndexToSentenceIndex(rsvp.currentWordIndex, rsvp.words, rsvp.sentences);
+          const prevSi = Math.max(currentSi - rsvp.chunkSize, 0);
+          rsvp.goTo(sentenceIndexToWordIndex(prevSi, rsvp.sentences));
+        }
       } else if (e.key === "r" || e.key === "R") {
         rsvp.restart();
       } else if (e.key === "a" || e.key === "A") {
